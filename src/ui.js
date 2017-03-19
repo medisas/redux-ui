@@ -9,6 +9,7 @@ import Immutable from 'immutable';
 import { updateUI, massUpdateUI, setDefaultUI, mountUI, unmountUI } from './action-reducer';
 
 import { getUIState } from './utils';
+import uiStateEqual from './uiStateEqual';
 
 export default function ui(key, opts = {}) {
   if (typeof key === 'object') {
@@ -18,6 +19,9 @@ export default function ui(key, opts = {}) {
 
   if (opts.options == null) {
     opts.options = {};
+  }
+  if (opts.options.areStatePropsEqual == null) {
+    opts.options.areStatePropsEqual = uiStateEqual;
   }
 
   return (WrappedComponent) => {
