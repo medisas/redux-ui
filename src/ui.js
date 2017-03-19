@@ -1,6 +1,6 @@
 'use strict';
 
-import React, { Component, PropTypes } from 'react';
+import React, { Component, PropTypes, PureComponent } from 'react';
 const { any, array, func, node, object, string } = PropTypes;
 import { bindActionCreators } from 'redux';
 import { connect } from 'react-redux';
@@ -16,26 +16,38 @@ export default function ui(key, opts = {}) {
     key = opts.key;
   }
 
-  const connector = connect(
-    (state) => { return { ui: getUIState(state) }; },
-    (dispatch) => bindActionCreators({
-      updateUI,
-      massUpdateUI,
-      setDefaultUI,
-      mountUI,
-      unmountUI
-    }, dispatch),
-    // These allow you to pass 'mergeProps' and 'options' keys into the
-    // UI decorator's options which will be passed to @connect().
-    // TODO: Document
-    opts.mergeProps,
-    opts.options,
-  );
+  if (opts.options == null) {
+    opts.options = {};
+  }
 
   return (WrappedComponent) => {
 
+    const mapStateToProps = (state, ownProps) => {
+      const wrappedUiKey = ownProps.wrappedUiKey;
+      return {
+        ui: getUIState(state),
+        uiToCompare: getUIState(state).get(wrappedUiKey),
+      };
+    };
+
+    const connector = connect(
+      mapStateToProps,
+      (dispatch) => bindActionCreators({
+        updateUI,
+        massUpdateUI,
+        setDefaultUI,
+        mountUI,
+        unmountUI
+      }, dispatch),
+      // These allow you to pass 'mergeProps' and 'options' keys into the
+      // UI decorator's options which will be passed to @connect().
+      // TODO: Document
+      opts.mergeProps,
+      opts.options,
+    );
+
     // Return a parent UI class which scopes all UI state to the given key
-    return connector(
+    const Connected = connector(
       /**
        * UI is a wrapper component which:
        *   1. Inherits any parent scopes from parent components that are wrapped
@@ -69,13 +81,7 @@ export default function ui(key, opts = {}) {
           // We do this in construct() to guarantee a new key at component
           // instantiation time wihch is needed for iterating through a list of
           // components with no explicit key
-          if (key === undefined) {
-            this.key = (WrappedComponent.displayName ||
-              WrappedComponent.name) +
-              Math.floor(Math.random() * (1 << 30)).toString(16);
-          } else {
-            this.key = key;
-          }
+          this.key = this.props.wrappedUiKey;
 
           // Immediately set this.uiPath and this.uiVars based on the incoming
           // context in class instantiation
@@ -186,8 +192,7 @@ export default function ui(key, opts = {}) {
         // variables defined in uiVars.
         getMergedContextVars(ctx = this.context) {
           if (!this.uiVars || !this.uiPath) {
-            const uiPath = ctx.uiPath || [];
-            this.uiPath = uiPath.concat(this.key);
+            this.uiPath = [this.key];
 
             // Keep trackof each UI variable and which path it should be set in
             const state = opts.state || {};
@@ -311,5 +316,31 @@ export default function ui(key, opts = {}) {
         }
       }
     );
+
+    // This is needed to be able to pass in the key to the Connected component, which will allow using it in
+    // mapStateToProps. That's necessary to avoid rerendering when unrelated UI components make a change to their own
+    // "ui" state.
+    class UIWrapperComponent extends PureComponent {
+      computeKey = () => {
+        if (key === undefined) {
+          return (WrappedComponent.displayName ||
+            WrappedComponent.name) +
+            Math.floor(Math.random() * (1 << 30)).toString(16);
+        } else {
+          return key;
+        }
+      }
+
+      constructor(props) {
+        super(props);
+        this.key = this.computeKey();
+      }
+
+      render() {
+        return <Connected { ...this.props } wrappedUiKey={this.key} />
+      }
+    }
+
+    return UIWrapperComponent;
   }
 }
